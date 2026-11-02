@@ -93,6 +93,11 @@ pub const Provider = struct {
         self.reasoning_effort = reasoning_effort;
     }
 
+    /// Forward reasoning_effort on the compatible wire (Ollama honors it; "none" disables thinking).
+    pub fn setReasoningEffort(self: *Provider, reasoning_effort: ?[]const u8) void {
+        self.reasoning_effort = reasoning_effort;
+    }
+
     pub fn setMaxResponseBytes(self: *Provider, max_response_bytes: ?usize) void {
         self.max_response_bytes = max_response_bytes;
     }
@@ -199,6 +204,7 @@ pub const Provider = struct {
             .top_k = self.top_k,
             .frequency_penalty = self.frequency_penalty,
             .presence_penalty = self.presence_penalty,
+            .reasoning_effort = self.reasoning_effort,
         };
         if (!self.use_openai_schema) return inference.chatRequestJsonWithOptionsAlloc(alloc, model, messages, .openai_compatible, options);
 
@@ -268,6 +274,7 @@ pub const Provider = struct {
         const Response = struct {
             usage: std.json.Value = .null,
             choices: []const struct {
+                finish_reason: ?[]const u8 = null,
                 logprobs: ?std.json.Value = null,
                 message: struct {
                     content: ?[]const u8 = null,
@@ -303,10 +310,17 @@ pub const Provider = struct {
         const choices = parsed.value.choices;
         var synthesized = false;
         if (choices.len > 0) {
-            const proof = if (choices[0].logprobs) |evidence| try std.json.Stringify.valueAlloc(alloc, evidence, .{}) else null;
-            errdefer if (proof) |value| alloc.free(value);
+            const finish_reason = finishReason(choices[0].finish_reason);
             var tool_calls = try cloneOpenAIToolCalls(alloc, choices[0].message.tool_calls);
             errdefer freeToolCalls(alloc, tool_calls);
+            // Reasoning models (Ollama /v1, vLLM) return their thinking in a
+            // separate `reasoning`/`reasoning_content` field and count it
+            // against max_tokens. An empty answer cut off by the token limit is
+            // a failed generation, not an empty success.
+            const answered = if (choices[0].message.content) |content| content.len > 0 else false;
+            if (!answered and tool_calls.len == 0 and finish_reason == .length) return error.InferenceOutputIncomplete;
+            const proof = if (choices[0].logprobs) |evidence| try std.json.Stringify.valueAlloc(alloc, evidence, .{}) else null;
+            errdefer if (proof) |value| alloc.free(value);
             if (choices[0].message.content) |content| {
                 if (tool_calls.len == 0) {
                     tool_calls = try inference.synthesizeForcedToolCallFromContent(alloc, content, self.tools_json, self.tool_choice_json);
@@ -316,6 +330,7 @@ pub const Provider = struct {
                     .content = try alloc.dupe(u8, content),
                     .tool_calls = tool_calls,
                     .tool_calls_synthesized = synthesized,
+                    .finish_reason = finish_reason,
                     .token_logprobs_json = proof,
                     .usage = inference.GenerationUsage.fromValue(parsed.value.usage, "prompt_tokens", "completion_tokens", "total_tokens"),
                     .allocator = alloc,
@@ -326,6 +341,7 @@ pub const Provider = struct {
                     .content = try alloc.dupe(u8, ""),
                     .tool_calls = tool_calls,
                     .tool_calls_synthesized = synthesized,
+                    .finish_reason = finish_reason,
                     .token_logprobs_json = proof,
                     .usage = inference.GenerationUsage.fromValue(parsed.value.usage, "prompt_tokens", "completion_tokens", "total_tokens"),
                     .allocator = alloc,
@@ -334,6 +350,10 @@ pub const Provider = struct {
         }
 
         return error.GenerateRequestFailed;
+    }
+
+    fn finishReason(raw: ?[]const u8) ?inference.GenerationFinishReason {
+        return std.meta.stringToEnum(inference.GenerationFinishReason, raw orelse return null);
     }
 
     fn cloneOpenAIToolCalls(alloc: std.mem.Allocator, maybe_calls: anytype) ![]inference.ToolCall {
@@ -496,6 +516,10 @@ test "openai generate round trip and empty choices failure" {
         .{ .method = .POST, .path = "/empty/chat/completions", .respond = .{
             .body = "{\"choices\":[]}",
         } },
+        // Ollama /v1 shape when a thinking model spends max_tokens on reasoning.
+        .{ .method = .POST, .path = "/thinking/chat/completions", .respond = .{
+            .body = "{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"\",\"reasoning\":\"Analyze the documents...\"},\"finish_reason\":\"length\"}]}",
+        } },
     });
     defer ts.deinit();
 
@@ -503,6 +527,8 @@ test "openai generate round trip and empty choices failure" {
     defer alloc.free(ok_base);
     const empty_base = try std.fmt.allocPrint(alloc, "{s}/empty", .{ts.baseUrl()});
     defer alloc.free(empty_base);
+    const thinking_base = try std.fmt.allocPrint(alloc, "{s}/thinking", .{ts.baseUrl()});
+    defer alloc.free(thinking_base);
 
     var state: struct {
         err: anyerror = error.None,
@@ -559,6 +585,12 @@ test "openai generate round trip and empty choices failure" {
     group.await(io) catch {};
 
     try std.testing.expectEqual(error.GenerateRequestFailed, state.err);
+
+    group = std.Io.Group.init;
+    group.concurrent(io, Fiber.runErr, .{ alloc, io, thinking_base, &state.err }) catch return;
+    try ts.handleOne();
+    group.await(io) catch {};
+    try std.testing.expectEqual(error.InferenceOutputIncomplete, state.err);
 }
 
 test "generating backend OpenAI preserves numeric literals in tools and response schemas" {

@@ -41,6 +41,8 @@ pub const ChatRequestOptions = struct {
     frequency_penalty: ?f32 = null,
     presence_penalty: ?f32 = null,
     enable_thinking: ?bool = null,
+    /// OpenAI-compatible reasoning control; Ollama maps "none" to disabled thinking.
+    reasoning_effort: ?[]const u8 = null,
 };
 
 pub fn chatRequestJsonAlloc(
@@ -96,6 +98,10 @@ pub fn chatRequestJsonWithOptionsAlloc(
     if (options.enable_thinking) |enabled| {
         try out.appendSlice(alloc, if (enabled) ",\"chat_template_kwargs\":{\"enable_thinking\":true}" else ",\"chat_template_kwargs\":{\"enable_thinking\":false}");
     }
+    if (options.reasoning_effort) |effort| {
+        try out.appendSlice(alloc, ",\"reasoning_effort\":");
+        try appendJsonString(alloc, &out, effort);
+    }
     try out.append(alloc, '}');
     return try out.toOwnedSlice(alloc);
 }
@@ -123,6 +129,10 @@ fn appendChatMessageJson(
     if (message.content) |content| {
         try out.appendSlice(alloc, ",\"content\":");
         try appendChatMessageContentJson(alloc, out, content, flavor);
+    } else if (message.role == .assistant and message.tool_calls == null) {
+        // Chat Completions requires content unless tool_calls is present;
+        // Ollama rejects a bare assistant turn with HTTP 400.
+        try out.appendSlice(alloc, ",\"content\":\"\"");
     }
     if (message.tool_calls) |tool_calls| {
         try out.appendSlice(alloc, ",\"tool_calls\":[");
@@ -272,4 +282,19 @@ test "shared chat wire preserves image detail and native media content" {
             try std.testing.expectEqualStrings("data:image/png;base64,iVBORw0KGgo=", parts[1].object.get("image_url").?.object.get("url").?.string);
         }
     }
+}
+
+test "shared chat wire gives bare assistant turns empty content" {
+    const a = std.testing.allocator;
+    const messages = [_]ChatMessage{
+        .{ .role = .assistant },
+        .{ .role = .assistant, .tool_calls = &.{.{ .id = "call-1", .name = "describe_table", .arguments = "{}" }} },
+    };
+    const body = try chatRequestJsonAlloc(a, "m", &messages, .openai_compatible);
+    defer a.free(body);
+    const parsed = try std.json.parseFromSlice(std.json.Value, a, body, .{});
+    defer parsed.deinit();
+    const wire = parsed.value.object.get("messages").?.array.items;
+    try std.testing.expectEqualStrings("", wire[0].object.get("content").?.string);
+    try std.testing.expect(!wire[1].object.contains("content"));
 }

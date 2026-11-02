@@ -600,7 +600,8 @@ pub const GeneratorConfig = struct {
         if (self.image_input_token_bound) |bound| if (bound == 0 or bound > std.math.maxInt(i64)) return error.InvalidGeneratorConfig;
         if (self.max_tokens <= 0) return error.InvalidGeneratorConfig;
         if (self.max_completion_tokens) |limit| if (limit <= 0) return error.InvalidGeneratorConfig;
-        if (self.provider != .openai and self.provider != .chatgpt and (self.max_completion_tokens != null or self.reasoning_effort != null)) return error.InvalidGeneratorConfig;
+        if (self.provider != .openai and self.provider != .chatgpt and self.max_completion_tokens != null) return error.InvalidGeneratorConfig;
+        if (self.provider != .openai and self.provider != .chatgpt and self.provider != .ollama and self.reasoning_effort != null) return error.InvalidGeneratorConfig;
         if (self.temperature) |value| if (value < 0 or value > 2) return error.InvalidGeneratorConfig;
         if (self.top_p) |value| if (value < 0 or value > 1) return error.InvalidGeneratorConfig;
         if (self.top_k) |value| if (value <= 0) return error.InvalidGeneratorConfig;

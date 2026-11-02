@@ -539,7 +539,7 @@ pub fn transcriptionRequest(a: std.mem.Allocator, cfg: transcribing.Config, requ
 
 pub fn validateChatConfig(cfg: generating.GeneratorConfig) !void {
     if (cfg.top_k != null and cfg.provider != .antfly and cfg.provider != .ollama and cfg.provider != .anthropic) return error.UnsupportedInferenceFeature;
-    if (cfg.reasoning_effort != null and cfg.provider != .openai) return error.UnsupportedInferenceFeature;
+    if (cfg.reasoning_effort != null and cfg.provider != .openai and cfg.provider != .ollama) return error.UnsupportedInferenceFeature;
 }
 
 pub fn chatBody(a: std.mem.Allocator, cfg: generating.GeneratorConfig, request: Json) ![]u8 {

@@ -7,6 +7,7 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..models.ollama_generator_config_provider import OllamaGeneratorConfigProvider
+from ..models.open_ai_reasoning_effort import OpenAIReasoningEffort
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="OllamaGeneratorConfig")
@@ -24,6 +25,8 @@ class OllamaGeneratorConfig:
         max_tokens (int | Unset): Maximum number of tokens to generate.
         top_p (float | Unset): Nucleus sampling parameter.
         top_k (int | Unset): Top-k sampling parameter.
+        reasoning_effort (OpenAIReasoningEffort | Unset): OpenAI reasoning effort; model support varies. Omit to use the
+            model default.
         timeout (int | Unset): HTTP response timeout in seconds for Ollama API calls.
     """
 
@@ -34,6 +37,7 @@ class OllamaGeneratorConfig:
     max_tokens: int | Unset = UNSET
     top_p: float | Unset = UNSET
     top_k: int | Unset = UNSET
+    reasoning_effort: OpenAIReasoningEffort | Unset = UNSET
     timeout: int | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -51,6 +55,10 @@ class OllamaGeneratorConfig:
         top_p = self.top_p
 
         top_k = self.top_k
+
+        reasoning_effort: str | Unset = UNSET
+        if not isinstance(self.reasoning_effort, Unset):
+            reasoning_effort = self.reasoning_effort.value
 
         timeout = self.timeout
 
@@ -72,6 +80,8 @@ class OllamaGeneratorConfig:
             field_dict["top_p"] = top_p
         if top_k is not UNSET:
             field_dict["top_k"] = top_k
+        if reasoning_effort is not UNSET:
+            field_dict["reasoning_effort"] = reasoning_effort
         if timeout is not UNSET:
             field_dict["timeout"] = timeout
 
@@ -94,6 +104,13 @@ class OllamaGeneratorConfig:
 
         top_k = d.pop("top_k", UNSET)
 
+        _reasoning_effort = d.pop("reasoning_effort", UNSET)
+        reasoning_effort: OpenAIReasoningEffort | Unset
+        if isinstance(_reasoning_effort, Unset):
+            reasoning_effort = UNSET
+        else:
+            reasoning_effort = OpenAIReasoningEffort(_reasoning_effort)
+
         timeout = d.pop("timeout", UNSET)
 
         ollama_generator_config = cls(
@@ -104,6 +121,7 @@ class OllamaGeneratorConfig:
             max_tokens=max_tokens,
             top_p=top_p,
             top_k=top_k,
+            reasoning_effort=reasoning_effort,
             timeout=timeout,
         )
 

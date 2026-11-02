@@ -532,6 +532,9 @@ components:
         top_k:
           type: integer
           description: "Top-k sampling parameter."
+        reasoning_effort:
+          $ref: "#/components/schemas/OpenAIReasoningEffort"
+          description: "Forwarded to Ollama's OpenAI-compatible endpoint; `none` disables thinking. Thinking tokens count against `max_tokens` (default 256), so thinking models need a larger `max_tokens` or `none`."
         timeout:
           type: integer
           description: "HTTP response timeout in seconds for Ollama API calls."

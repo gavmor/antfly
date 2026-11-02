@@ -641,7 +641,8 @@ const BackendState = struct {
                 provider.response_format_json = self.cfg.response_format_json;
                 provider.logprobs = self.cfg.logprobs;
                 provider.setMaxTokens(self.cfg.max_tokens);
-                if (self.cfg.provider == .openai) provider.setCompletionOptions(self.cfg.max_completion_tokens, if (self.cfg.reasoning_effort) |effort| @tagName(effort) else null);
+                const reasoning_effort = if (self.cfg.reasoning_effort) |effort| @tagName(effort) else null;
+                if (self.cfg.provider == .openai) provider.setCompletionOptions(self.cfg.max_completion_tokens, reasoning_effort) else provider.setReasoningEffort(reasoning_effort);
                 provider.setMaxResponseBytes(self.max_response_bytes);
                 provider.setSamplingOptions(self.cfg.temperature, self.cfg.top_p, self.cfg.top_k, self.cfg.frequency_penalty, self.cfg.presence_penalty);
                 break :blk try provider.generator().generate(alloc, model, messages);
@@ -1912,17 +1913,27 @@ test "generating backend sends OpenAI completion options and preserves compatibl
             defer parsed.deinit();
             try std.testing.expectEqual(@as(i64, 40), parsed.value.object.get("top_k").?.integer);
         }
+        fn ollama_thinking(req: httpx.testing_mod.RequestInfo) !void {
+            const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, req.body, .{});
+            defer parsed.deinit();
+            const obj = parsed.value.object;
+            try std.testing.expectEqualStrings("none", obj.get("reasoning_effort").?.string);
+            try std.testing.expectEqual(@as(i64, 128), obj.get("max_tokens").?.integer);
+            try std.testing.expect(!obj.contains("max_completion_tokens"));
+        }
     };
     var server = try httpx.TestServer.start(alloc, io, &.{
         .{ .method = .POST, .path = "/modern/chat/completions", .assert_request = Check.modern, .respond = .{ .body = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}" } },
         .{ .method = .POST, .path = "/legacy/chat/completions", .assert_request = Check.legacy, .respond = .{ .body = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}" } },
         .{ .method = .POST, .path = "/compatible/chat/completions", .assert_request = Check.compatible, .respond = .{ .body = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}" } },
+        .{ .method = .POST, .path = "/thinking/chat/completions", .assert_request = Check.ollama_thinking, .respond = .{ .body = "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}" } },
     });
     defer server.deinit();
     const cases = [_]struct { path: []const u8, provider: []const u8, options: []const u8 }{
         .{ .path = "modern", .provider = "openai", .options = "\"max_completion_tokens\":1024,\"reasoning_effort\":\"none\"" },
         .{ .path = "legacy", .provider = "openai", .options = "\"max_tokens\":128" },
         .{ .path = "compatible", .provider = "ollama", .options = "\"max_tokens\":128,\"top_k\":40" },
+        .{ .path = "thinking", .provider = "ollama", .options = "\"max_tokens\":128,\"reasoning_effort\":\"none\"" },
     };
     for (cases) |case| {
         const raw = try std.fmt.allocPrint(alloc, "{{\"provider\":\"{s}\",\"model\":\"m\",\"url\":\"{s}/{s}\",{s}}}", .{ case.provider, server.baseUrl(), case.path, case.options });

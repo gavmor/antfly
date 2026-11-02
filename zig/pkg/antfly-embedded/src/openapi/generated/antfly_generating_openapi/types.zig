@@ -886,11 +886,12 @@ pub const GeneratorConfig = struct {
     region: ?[]const u8 = null,
     /// Anthropic workspace for keys not scoped to a workspace. Defaults to ANTHROPIC_WORKSPACE_ID.
     workspace_id: ?[]const u8 = null,
+    /// Forwarded to Ollama's OpenAI-compatible endpoint; `none` disables thinking. Thinking tokens count against `max_tokens` (default 256), so thinking models need a larger `max_tokens` or `none`.
+    reasoning_effort: ?OpenAIReasoningEffort = null,
     /// HTTP response timeout in seconds for Ollama API calls.
     timeout: ?i64 = null,
     /// The URL of the Inference API endpoint. Can also be set via ANTFLY_INFERENCE_URL environment variable.
     api_url: ?[]const u8 = null,
-    reasoning_effort: ?OpenAIReasoningEffort = null,
     /// Opaque personal registration owned by the authenticated caller.
     connection_id: ?[]const u8 = null,
     /// OpenAI completion budget, including visible output and reasoning tokens. Use for reasoning models instead of max_tokens; the two are mutually exclusive.
@@ -918,9 +919,9 @@ pub const GeneratorConfig = struct {
         .{ "credentials_path", "credentials_path", true },
         .{ "region", "region", true },
         .{ "workspace_id", "workspace_id", true },
+        .{ "reasoning_effort", "reasoning_effort", true },
         .{ "timeout", "timeout", true },
         .{ "api_url", "api_url", true },
-        .{ "reasoning_effort", "reasoning_effort", true },
         .{ "connection_id", "connection_id", true },
         .{ "max_completion_tokens", "max_completion_tokens", true },
         .{ "max_image_input_tokens", "max_image_input_tokens", true },
@@ -1005,16 +1006,16 @@ pub const GeneratorConfig = struct {
             try jw.objectField("workspace_id");
             try jw.write(value);
         }
+        if (self.reasoning_effort) |value| {
+            try jw.objectField("reasoning_effort");
+            try jw.write(value);
+        }
         if (self.timeout) |value| {
             try jw.objectField("timeout");
             try jw.write(value);
         }
         if (self.api_url) |value| {
             try jw.objectField("api_url");
-            try jw.write(value);
-        }
-        if (self.reasoning_effort) |value| {
-            try jw.objectField("reasoning_effort");
             try jw.write(value);
         }
         if (self.connection_id) |value| {
@@ -1247,6 +1248,8 @@ pub const OllamaGeneratorConfig = struct {
     top_p: ?f32 = null,
     /// Top-k sampling parameter.
     top_k: ?i64 = null,
+    /// Forwarded to Ollama's OpenAI-compatible endpoint; `none` disables thinking. Thinking tokens count against `max_tokens` (default 256), so thinking models need a larger `max_tokens` or `none`.
+    reasoning_effort: ?OpenAIReasoningEffort = null,
     /// HTTP response timeout in seconds for Ollama API calls.
     timeout: ?i64 = null,
 
@@ -1259,6 +1262,7 @@ pub const OllamaGeneratorConfig = struct {
         .{ "max_tokens", "max_tokens", true },
         .{ "top_p", "top_p", true },
         .{ "top_k", "top_k", true },
+        .{ "reasoning_effort", "reasoning_effort", true },
         .{ "timeout", "timeout", true },
     };
 
@@ -1294,6 +1298,10 @@ pub const OllamaGeneratorConfig = struct {
         }
         if (self.top_k) |value| {
             try jw.objectField("top_k");
+            try jw.write(value);
+        }
+        if (self.reasoning_effort) |value| {
+            try jw.objectField("reasoning_effort");
             try jw.write(value);
         }
         if (self.timeout) |value| {
